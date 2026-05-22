@@ -6,7 +6,10 @@ export default defineConfig({
   preview: {
     host: '0.0.0.0',
     port: process.env.PORT || 4173,
-    allowedHosts: ['all'],
+    allowedHosts: [
+      'aeo-hub-production.up.railway.app',
+      'all',
+    ],
   },
   server: {
     proxy: {
