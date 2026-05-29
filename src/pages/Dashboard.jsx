@@ -8,6 +8,7 @@ import QuestionCard from '../components/QuestionCard'
 import KeywordManager from '../components/KeywordManager'
 import AeoTracker from '../components/AeoTracker'
 import ClientCredentials from '../components/ClientCredentials'
+import ContentEngine from '../components/ContentEngine'
 
 // ─── Toast ─────────────────────────────────────────────────────────────────
 function Toast({ toast }) {
@@ -31,6 +32,14 @@ function Toast({ toast }) {
       {toast.message}
     </div>
   )
+}
+
+// ─── Tab persistence (session-scoped, per client) ───────────────────────────
+function getStoredTab(clientId) {
+  try { return sessionStorage.getItem(`aeo_tab_${clientId}`) || 'questions' } catch { return 'questions' }
+}
+function storeTab(clientId, tab) {
+  try { sessionStorage.setItem(`aeo_tab_${clientId}`, tab) } catch {}
 }
 
 // ─── Section state persistence (session-scoped, per client) ─────────────────
@@ -144,6 +153,7 @@ export default function Dashboard() {
   const { byStatus, updateQuestion, deleteQuestion, deleteAllByStatus, insertQuestions, refetch, loading: qLoading } = useQuestions(clientId)
   const { keywords } = useKeywords(clientId)
   const [sectionsOpen, setSectionsOpen] = useState(DEFAULT_SECTIONS)
+  const [activeTab, setActiveTab] = useState('questions')
   const autoExpandCheckedRef = useRef(new Set())
 
   useEffect(() => {
@@ -151,8 +161,8 @@ export default function Dashboard() {
     setClientLoading(true)
     supabase.from('clients').select('*').eq('id', clientId).single()
       .then(({ data }) => { setClient(data); setClientLoading(false) })
-    // Load stored section state for this client, defaulting to all collapsed
     setSectionsOpen(getStoredSections(clientId) ?? DEFAULT_SECTIONS)
+    setActiveTab(getStoredTab(clientId))
   }, [clientId])
 
   // Auto-expand New Questions on first visit to a client if it has questions
@@ -346,7 +356,7 @@ export default function Dashboard() {
             <span className="text-[#6E7681] text-xs">{label}</span>
           </div>
         ))}
-        {totalNew === 0 && activeKeywordCount > 0 && (
+        {totalNew === 0 && activeKeywordCount > 0 && activeTab === 'questions' && (
           <p className="ml-auto text-[#6E7681] text-xs italic">
             No new questions — click Scan Now to check for more.
           </p>
@@ -361,64 +371,105 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* ── Question sections ──────────────────────────────────────────── */}
-      <div className="px-8 py-6 space-y-10 max-w-5xl">
-        {qLoading ? (
-          <div className="flex items-center justify-center py-16">
-            <div className="w-6 h-6 border-2 border-[#1D9E75] border-t-transparent rounded-full animate-spin" />
+      {/* ── Tab bar ───────────────────────────────────────────────────── */}
+      <div className="px-8 flex gap-0 border-b border-[#1C2333] bg-[#0D1117]">
+        {[
+          { id: 'questions', label: 'Questions', count: byStatus.new.length + byStatus.draft.length + byStatus.posted.length },
+          { id: 'content-engine', label: 'Content Engine', count: null },
+        ].map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => {
+              setActiveTab(tab.id)
+              if (clientId) storeTab(clientId, tab.id)
+            }}
+            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === tab.id
+                ? 'border-[#1D9E75] text-[#1D9E75]'
+                : 'border-transparent text-[#6E7681] hover:text-[#8B949E]'
+            }`}
+          >
+            {tab.label}
+            {tab.count !== null && tab.count > 0 && (
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                activeTab === tab.id ? 'bg-[#1D9E75]/15 text-[#1D9E75]' : 'bg-[#21262D] text-[#6E7681]'
+              }`}>
+                {tab.count}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Tab content ───────────────────────────────────────────────── */}
+      <div className="px-8 py-6 max-w-5xl">
+
+        {/* Questions tab */}
+        {activeTab === 'questions' && (
+          <div className="space-y-10">
+            {qLoading ? (
+              <div className="flex items-center justify-center py-16">
+                <div className="w-6 h-6 border-2 border-[#1D9E75] border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : (
+              <>
+                <Section
+                  icon="●"
+                  label="New Questions"
+                  count={byStatus.new.length}
+                  accent="text-blue-400"
+                  empty="No new questions yet. Click Scan Now to find some."
+                  onClearAll={() => deleteAllByStatus('new')}
+                  isOpen={sectionsOpen.new}
+                  onToggle={() => toggleSection('new')}
+                >
+                  {byStatus.new.map((q) => (
+                    <QuestionCard key={q.id} question={q} client={client} onUpdate={updateQuestion} onDelete={deleteQuestion} onToast={notify} />
+                  ))}
+                </Section>
+
+                <Section
+                  icon="✎"
+                  label="Drafts"
+                  count={byStatus.draft.length}
+                  accent="text-amber-400"
+                  empty="No drafts yet. Generate answers from the New Questions section."
+                  onClearAll={() => deleteAllByStatus('draft')}
+                  isOpen={sectionsOpen.draft}
+                  onToggle={() => toggleSection('draft')}
+                >
+                  {byStatus.draft.map((q) => (
+                    <QuestionCard key={q.id} question={q} client={client} onUpdate={updateQuestion} onDelete={deleteQuestion} onToast={notify} />
+                  ))}
+                </Section>
+
+                <Section
+                  icon="✓"
+                  label="Posted"
+                  count={byStatus.posted.length}
+                  accent="text-emerald-400"
+                  empty="No posted answers yet."
+                  onClearAll={() => deleteAllByStatus('posted')}
+                  isOpen={sectionsOpen.posted}
+                  onToggle={() => toggleSection('posted')}
+                >
+                  {byStatus.posted.map((q) => (
+                    <QuestionCard key={q.id} question={q} client={client} onUpdate={updateQuestion} onDelete={deleteQuestion} onToast={notify} />
+                  ))}
+                </Section>
+
+                {client && <AeoTracker client={client} />}
+              </>
+            )}
           </div>
-        ) : (
-          <>
-            <Section
-              icon="●"
-              label="New Questions"
-              count={byStatus.new.length}
-              accent="text-blue-400"
-              empty="No new questions yet. Click Scan Now to find some."
-              onClearAll={() => deleteAllByStatus('new')}
-              isOpen={sectionsOpen.new}
-              onToggle={() => toggleSection('new')}
-            >
-              {byStatus.new.map((q) => (
-                <QuestionCard key={q.id} question={q} client={client} onUpdate={updateQuestion} onDelete={deleteQuestion} onToast={notify} />
-              ))}
-            </Section>
-
-            <Section
-              icon="✎"
-              label="Drafts"
-              count={byStatus.draft.length}
-              accent="text-amber-400"
-              empty="No drafts yet. Generate answers from the New Questions section."
-              onClearAll={() => deleteAllByStatus('draft')}
-              isOpen={sectionsOpen.draft}
-              onToggle={() => toggleSection('draft')}
-            >
-              {byStatus.draft.map((q) => (
-                <QuestionCard key={q.id} question={q} client={client} onUpdate={updateQuestion} onDelete={deleteQuestion} onToast={notify} />
-              ))}
-            </Section>
-
-            <Section
-              icon="✓"
-              label="Posted"
-              count={byStatus.posted.length}
-              accent="text-emerald-400"
-              empty="No posted answers yet."
-              onClearAll={() => deleteAllByStatus('posted')}
-              isOpen={sectionsOpen.posted}
-              onToggle={() => toggleSection('posted')}
-            >
-              {byStatus.posted.map((q) => (
-                <QuestionCard key={q.id} question={q} client={client} onUpdate={updateQuestion} onDelete={deleteQuestion} onToast={notify} />
-              ))}
-            </Section>
-          </>
         )}
 
-        {/* ── AEO Tracking ──────────────────────────────────────────────── */}
-        {client && !qLoading && (
-          <AeoTracker client={client} />
+        {/* Content Engine tab */}
+        {activeTab === 'content-engine' && client && (
+          <ContentEngine
+            client={client}
+            questions={[...byStatus.new, ...byStatus.draft, ...byStatus.posted]}
+          />
         )}
       </div>
 

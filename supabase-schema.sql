@@ -58,3 +58,19 @@ create policy "allow_all" on clients for all using (true) with check (true);
 create policy "allow_all" on keywords for all using (true) with check (true);
 create policy "allow_all" on questions for all using (true) with check (true);
 create policy "allow_all" on client_credentials for all using (true) with check (true);
+
+create table if not exists blog_posts (
+  id uuid default gen_random_uuid() primary key,
+  client_id uuid references clients(id) on delete cascade,
+  title text,
+  keyword text,
+  content text,
+  word_count int,
+  status text default 'draft',
+  inspired_by jsonb default '[]',
+  internal_links jsonb default '[]',
+  external_links jsonb default '[]',
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+alter table blog_posts disable row level security;
