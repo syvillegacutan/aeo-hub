@@ -96,7 +96,7 @@ function intentCls(intent) {
 
 // ── Topic Card ───────────────────────────────────────────────────────────────
 
-function TopicCard({ topic, onWrite, writing }) {
+function TopicCard({ topic, onWrite, writing, isWritingThis }) {
   return (
     <div className="bg-[#161B22] border border-[#21262D] rounded-xl p-5 hover:border-[#30363D] transition-colors flex flex-col">
       <h3 className="text-white font-semibold text-[15px] leading-snug mb-3 flex-1">{topic.title}</h3>
@@ -120,12 +120,21 @@ function TopicCard({ topic, onWrite, writing }) {
       <button
         onClick={() => onWrite(topic)}
         disabled={writing}
-        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium text-white bg-[#1D9E75] hover:bg-[#179967] disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium text-white bg-[#1D9E75] hover:bg-[#179967] disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer transition-colors"
       >
-        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125" />
-        </svg>
-        Write this blog
+        {isWritingThis ? (
+          <>
+            <Spinner className="w-4 h-4" />
+            Writing blog post...
+          </>
+        ) : (
+          <>
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125" />
+            </svg>
+            Write this blog
+          </>
+        )}
       </button>
     </div>
   )
@@ -437,6 +446,7 @@ export default function ContentEngine({ client, questions }) {
                 topic={topic}
                 onWrite={handleWriteBlog}
                 writing={writingBlog}
+                isWritingThis={writingBlog && selectedTopic?.title === topic.title}
               />
             ))}
           </div>
