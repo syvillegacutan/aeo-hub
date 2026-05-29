@@ -74,3 +74,16 @@ create table if not exists blog_posts (
   updated_at timestamptz default now()
 );
 alter table blog_posts disable row level security;
+
+create table if not exists blog_topic_suggestions (
+  id uuid default gen_random_uuid() primary key,
+  client_id uuid references clients(id) on delete cascade,
+  title text,
+  keyword text,
+  intent text,
+  description text,
+  aeo_reason text,
+  written boolean default false,
+  created_at timestamptz default now()
+);
+alter table blog_topic_suggestions disable row level security;

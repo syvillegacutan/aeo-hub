@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { suggestBlogTopics, writeBlogPost, suggestInternalLinks } from '../lib/anthropic'
 
@@ -96,10 +96,55 @@ function intentCls(intent) {
 
 // ── Topic Card ───────────────────────────────────────────────────────────────
 
-function TopicCard({ topic, onWrite, writing, isWritingThis }) {
+function TopicCard({ topic, onWrite, writing, isWritingThis, onDelete }) {
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+
+  async function handleDelete() {
+    setDeleting(true)
+    await onDelete(topic.id)
+    setDeleting(false)
+    setConfirmDelete(false)
+  }
+
   return (
-    <div className="bg-[#161B22] border border-[#21262D] rounded-xl p-5 hover:border-[#30363D] transition-colors flex flex-col">
-      <h3 className="text-white font-semibold text-[15px] leading-snug mb-3 flex-1">{topic.title}</h3>
+    <div className="bg-[#161B22] border border-[#21262D] rounded-xl p-5 hover:border-[#30363D] transition-colors flex flex-col relative">
+
+      {/* X button */}
+      <button
+        onClick={() => setConfirmDelete(true)}
+        className="absolute top-3 right-3 p-0.5 text-[#6E7681] hover:text-red-400 transition-colors rounded cursor-pointer"
+        title="Delete topic"
+      >
+        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+
+      {/* Delete confirmation overlay */}
+      {confirmDelete && (
+        <div className="absolute inset-0 bg-[#0D1117]/95 rounded-xl flex flex-col items-center justify-center gap-3 p-4 z-10">
+          <p className="text-[#C9D1D9] text-sm font-medium text-center">Delete this topic?</p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setConfirmDelete(false)}
+              disabled={deleting}
+              className="px-3 py-1.5 text-xs rounded-md bg-[#21262D] text-[#8B949E] hover:bg-[#30363D] transition-colors disabled:opacity-50 cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="px-3 py-1.5 text-xs rounded-md bg-red-600 text-white hover:bg-red-500 transition-colors disabled:opacity-50 cursor-pointer"
+            >
+              {deleting ? 'Deleting…' : 'Delete'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <h3 className="text-white font-semibold text-[15px] leading-snug mb-3 flex-1 pr-5">{topic.title}</h3>
 
       <div className="flex items-center gap-2 flex-wrap mb-3">
         <span className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-[#1D9E75]/10 text-[#1D9E75] border border-[#1D9E75]/20">
@@ -108,6 +153,11 @@ function TopicCard({ topic, onWrite, writing, isWritingThis }) {
         <span className={`text-[11px] font-medium px-2 py-0.5 rounded-md capitalize ${intentCls(topic.intent)}`}>
           {topic.intent}
         </span>
+        {topic.written && (
+          <span className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-400 border border-emerald-500/25">
+            Written
+          </span>
+        )}
       </div>
 
       <p className="text-[#8B949E] text-sm leading-relaxed mb-3">{topic.description}</p>
@@ -168,6 +218,7 @@ function SectionHeader({ icon, title, subtitle }) {
 export default function ContentEngine({ client, questions }) {
   // Topic suggestion
   const [topics, setTopics]                   = useState([])
+  const [topicsLoading, setTopicsLoading]     = useState(false)
   const [suggestingTopics, setSuggestingTopics] = useState(false)
   const [topicsError, setTopicsError]         = useState(null)
 
@@ -202,17 +253,60 @@ export default function ContentEngine({ client, questions }) {
     .map(q => ({ url: q.source_url, question: q.question_text, platform: q.platform }))
     .slice(0, 10)
 
+  // ── Load topics from Supabase when client changes ──────────────────────────
+
+  useEffect(() => {
+    if (!client?.id) {
+      setTopics([])
+      return
+    }
+    setTopicsLoading(true)
+    setTopicsError(null)
+    setTopics([])
+    setSelectedTopic(null)
+    setBlogContent('')
+    setBlogError(null)
+    setInternalLinks([])
+    setSitemapPages([])
+    setSitemapUrl('')
+    setSitemapInput('')
+    setSitemapError(null)
+    setSavedId(null)
+
+    supabase
+      .from('blog_topic_suggestions')
+      .select('*')
+      .eq('client_id', client.id)
+      .order('created_at', { ascending: false })
+      .then(({ data, error }) => {
+        if (!error && data) setTopics(data)
+        else if (error) setTopicsError(error.message)
+        setTopicsLoading(false)
+      })
+  }, [client?.id])
+
   // ── Topic suggestion ───────────────────────────────────────────────────────
 
   async function handleSuggestTopics() {
     setSuggestingTopics(true)
     setTopicsError(null)
-    setTopics([])
-    setSelectedTopic(null)
-    setBlogContent('')
     try {
       const result = await suggestBlogTopics(client, questions)
-      setTopics(result)
+      const toInsert = result.map(t => ({
+        client_id: client.id,
+        title: t.title,
+        keyword: t.keyword,
+        intent: t.intent,
+        description: t.description,
+        aeo_reason: t.aeo_reason,
+      }))
+      const { data: saved, error } = await supabase
+        .from('blog_topic_suggestions')
+        .insert(toInsert)
+        .select()
+      if (error) throw error
+      // Prepend new topics so they appear at the top
+      setTopics(prev => [...(saved || []), ...prev])
     } catch (e) {
       setTopicsError(e?.response?.data?.error?.message || e?.message || 'Failed to get suggestions')
     } finally {
@@ -236,10 +330,39 @@ export default function ContentEngine({ client, questions }) {
     try {
       const content = await writeBlogPost(topic, client, questions)
       setBlogContent(content)
+      // Mark as written in Supabase and update local state
+      if (topic.id) {
+        await supabase
+          .from('blog_topic_suggestions')
+          .update({ written: true })
+          .eq('id', topic.id)
+        setTopics(prev => prev.map(t => t.id === topic.id ? { ...t, written: true } : t))
+        setSelectedTopic(prev => ({ ...prev, written: true }))
+      }
     } catch (e) {
       setBlogError(e?.response?.data?.error?.message || e?.message || 'Failed to write blog post')
     } finally {
       setWritingBlog(false)
+    }
+  }
+
+  // ── Topic deletion ─────────────────────────────────────────────────────────
+
+  async function handleDeleteTopic(topicId) {
+    const { error } = await supabase
+      .from('blog_topic_suggestions')
+      .delete()
+      .eq('id', topicId)
+    if (error) {
+      alert('Failed to delete topic: ' + error.message)
+      return
+    }
+    setTopics(prev => prev.filter(t => t.id !== topicId))
+    // Clear blog writer if the deleted topic was selected
+    if (selectedTopic?.id === topicId) {
+      setSelectedTopic(null)
+      setBlogContent('')
+      setBlogError(null)
     }
   }
 
@@ -362,7 +485,7 @@ export default function ContentEngine({ client, questions }) {
       <div className="flex flex-col items-center justify-center py-24 text-center px-8">
         <div className="w-14 h-14 rounded-2xl bg-[#1D9E75]/10 border border-[#1D9E75]/20 flex items-center justify-center mb-4">
           <svg className="w-7 h-7 text-[#1D9E75]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0118 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
           </svg>
         </div>
         <p className="text-[#C9D1D9] font-medium mb-1">No questions detected yet</p>
@@ -388,7 +511,7 @@ export default function ContentEngine({ client, questions }) {
         </div>
         <button
           onClick={handleSuggestTopics}
-          disabled={suggestingTopics || writingBlog}
+          disabled={suggestingTopics || writingBlog || topicsLoading}
           className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium text-white bg-[#1D9E75] hover:bg-[#179967] disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
         >
           {suggestingTopics ? (
@@ -411,11 +534,18 @@ export default function ContentEngine({ client, questions }) {
         </div>
       )}
 
+      {/* ── Topics loading skeleton ────────────────────────────────────────── */}
+      {topicsLoading && (
+        <div className="flex items-center justify-center py-16">
+          <div className="w-6 h-6 border-2 border-[#1D9E75] border-t-transparent rounded-full animate-spin" />
+        </div>
+      )}
+
       {/* ── Empty state ────────────────────────────────────────────────────── */}
-      {!suggestingTopics && !topics.length && !topicsError && (
+      {!topicsLoading && !suggestingTopics && !topics.length && !topicsError && (
         <div className="flex flex-col items-center justify-center py-16 text-center border border-dashed border-[#21262D] rounded-2xl">
           <svg className="w-10 h-10 text-[#21262D] mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0118 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
           </svg>
           <p className="text-[#6E7681] text-sm max-w-xs">
             Click <span className="text-[#C9D1D9] font-medium">Suggest blog topics</span> to generate 5 AI-powered blog ideas from your detected questions.
@@ -424,7 +554,7 @@ export default function ContentEngine({ client, questions }) {
       )}
 
       {/* ── Topic Cards ────────────────────────────────────────────────────── */}
-      {topics.length > 0 && (
+      {!topicsLoading && topics.length > 0 && (
         <div>
           <div className="flex items-center gap-2 mb-4">
             <span className="text-[#6E7681] text-xs font-semibold uppercase tracking-wider">Blog Topics</span>
@@ -435,18 +565,20 @@ export default function ContentEngine({ client, questions }) {
               disabled={suggestingTopics || writingBlog}
               className="text-xs text-[#6E7681] hover:text-[#1D9E75] transition-colors disabled:opacity-50"
             >
-              Regenerate
+              {suggestingTopics ? <Spinner className="w-3 h-3 inline-block" /> : null}
+              {' '}Add 5 more topics
             </button>
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {topics.map((topic, i) => (
               <TopicCard
-                key={i}
+                key={topic.id || i}
                 topic={topic}
                 onWrite={handleWriteBlog}
                 writing={writingBlog}
-                isWritingThis={writingBlog && selectedTopic?.title === topic.title}
+                isWritingThis={writingBlog && selectedTopic?.id === topic.id}
+                onDelete={handleDeleteTopic}
               />
             ))}
           </div>
