@@ -245,7 +245,17 @@ export default function ContentEngine({ client, questions }) {
   const [copiedMarkdown, setCopiedMarkdown]   = useState(false)
   const [copiedItem, setCopiedItem]           = useState(null)
 
+  // Save toast
+  const [saveToast, setSaveToast]             = useState(null)
+
   const fileInputRef = useRef(null)
+  const saveToastTimer = useRef(null)
+
+  function notifySave(message, type = 'success') {
+    if (saveToastTimer.current) clearTimeout(saveToastTimer.current)
+    setSaveToast({ message, type })
+    saveToastTimer.current = setTimeout(() => setSaveToast(null), 4000)
+  }
 
   // External links from question source URLs
   const externalLinks = questions
@@ -273,14 +283,21 @@ export default function ContentEngine({ client, questions }) {
     setSitemapError(null)
     setSavedId(null)
 
+    console.log('[ContentEngine] Fetching topics for client_id:', client.id)
     supabase
       .from('blog_topic_suggestions')
       .select('*')
       .eq('client_id', client.id)
       .order('created_at', { ascending: false })
       .then(({ data, error }) => {
-        if (!error && data) setTopics(data)
-        else if (error) setTopicsError(error.message)
+        console.log('[ContentEngine] Fetch result — data:', data, '| error:', error)
+        if (!error && data) {
+          if (data.length === 0) console.warn('[ContentEngine] No topics found in Supabase for this client.')
+          setTopics(data)
+        } else if (error) {
+          console.error('[ContentEngine] Fetch error:', error)
+          setTopicsError(error.message)
+        }
         setTopicsLoading(false)
       })
   }, [client?.id])
@@ -300,11 +317,17 @@ export default function ContentEngine({ client, questions }) {
         description: t.description,
         aeo_reason: t.aeo_reason,
       }))
+      console.log('[ContentEngine] Upserting topics into Supabase:', toInsert)
       const { data: saved, error } = await supabase
         .from('blog_topic_suggestions')
-        .insert(toInsert)
+        .upsert(toInsert, { onConflict: 'id' })
         .select()
-      if (error) throw error
+      console.log('[ContentEngine] Upsert result — saved:', saved, '| error:', error)
+      if (error) {
+        notifySave('Save failed: ' + error.message, 'error')
+        throw error
+      }
+      notifySave('Topics saved', 'success')
       // Prepend new topics so they appear at the top
       setTopics(prev => [...(saved || []), ...prev])
     } catch (e) {
@@ -905,6 +928,26 @@ export default function ContentEngine({ client, questions }) {
               )}
             </>
           )}
+        </div>
+      )}
+
+      {/* ── Save toast ─────────────────────────────────────────────────────── */}
+      {saveToast && (
+        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-3 rounded-xl border text-sm font-medium shadow-xl transition-all ${
+          saveToast.type === 'success'
+            ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+            : 'bg-red-500/15 border-red-500/30 text-red-300'
+        }`}>
+          {saveToast.type === 'success' ? (
+            <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          ) : (
+            <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+            </svg>
+          )}
+          {saveToast.message}
         </div>
       )}
     </div>
