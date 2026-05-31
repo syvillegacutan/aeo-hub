@@ -100,7 +100,7 @@ export async function runPlatformCheck(platformKey, client) {
   const score      = Math.round((mentionCount / questions.length) * 100)
   const checked_at = new Date().toISOString()
 
-  // Persist to Supabase — non-fatal if RLS blocks it
+  // Persist to Supabase
   const { error: saveError } = await supabase.from('aeo_scores').insert({
     client_id: client.id,
     platform:  platformKey,
@@ -109,5 +109,11 @@ export async function runPlatformCheck(platformKey, client) {
   })
   if (saveError) console.warn('[aeo] Supabase save failed:', saveError.message)
 
-  return { score, responses, checked_at, mentioned: mentionCount > 0 }
+  return {
+    score,
+    responses,
+    checked_at,
+    mentioned: mentionCount > 0,
+    saveError: saveError ? saveError.message : null,
+  }
 }

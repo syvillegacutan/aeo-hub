@@ -205,12 +205,17 @@ export default function AeoTracker({ client }) {
 
   async function handleRunCheck() {
     setError(null)
+    const saveErrors = []
+
     // Run all 3 platforms in parallel, updating checking state per-platform
     const pending = PLATFORMS.map(async ({ key }) => {
       setChecking((c) => ({ ...c, [key]: true }))
       try {
         const result = await runPlatformCheck(key, client)
         setResults((r) => ({ ...r, [key]: result }))
+        if (result.saveError) {
+          saveErrors.push(`${key}: ${result.saveError}`)
+        }
       } catch (err) {
         const msg = err?.response?.data?.error?.message || err.message || 'Check failed'
         setResults((r) => ({ ...r, [key]: { score: 0, responses: [], error: msg, checked_at: new Date().toISOString() } }))
@@ -220,6 +225,9 @@ export default function AeoTracker({ client }) {
     })
 
     await Promise.all(pending)
+    if (saveErrors.length) {
+      setError('Score history could not be saved — ' + saveErrors.join(' · '))
+    }
     await refetch()
   }
 
@@ -257,7 +265,10 @@ export default function AeoTracker({ client }) {
       </div>
 
       {error && (
-        <div className="mb-4 px-3 py-2 bg-red-500/10 border border-red-500/25 rounded-lg text-red-400 text-xs">
+        <div className="mb-4 px-3 py-2 bg-amber-500/10 border border-amber-500/25 rounded-lg text-amber-400 text-xs flex items-start gap-2">
+          <svg className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+          </svg>
           {error}
         </div>
       )}

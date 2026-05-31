@@ -91,7 +91,7 @@ export async function writeBlogPost(topic, client, questions) {
   const { data } = await axios.post(
     'https://api.anthropic.com/v1/messages',
     {
-      model: 'claude-sonnet-4-5-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 4096,
       system: `You are an expert blog writer for local businesses. Write a complete, publish-ready blog post following these rules:
 - Minimum 1,200 words
