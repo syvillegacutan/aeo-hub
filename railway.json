@@ -6,4 +6,6 @@
   "deploy": {
     "startCommand": "npm run build && npm start",
     "restartPolicyType": "ON_FAILURE",
-    "restartPolicyMaxRetries"
+    "restartPolicyMaxRetries": 10
+  }
+}
