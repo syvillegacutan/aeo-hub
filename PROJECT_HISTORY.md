@@ -272,3 +272,61 @@ These rules are enforced in every Anthropic API system prompt throughout the app
 When starting a new Claude conversation about this project, share this file and say: I am continuing to build the AEO Hub app, here is the full project context. Claude will have everything needed to help without re-explaining the whole setup.
 
 For Claude Code sessions, always start from the aeo-hub folder and type claude to open Claude Code. Use plain English to describe what you want to change. After changes are made, push to GitHub and Railway auto-deploys.
+
+---
+
+## Change Log
+
+### 2026-06-17 — Security Hardening (RLS + API Key Proxy + Key Rotation)
+
+**Problem 1: Supabase tables publicly accessible**
+Supabase flagged a critical vulnerability — Row-Level Security (RLS) was disabled on 5 tables (aeo_scores, blog_topic_suggestions, clients, keywords, questions), meaning anyone with the project URL could read, edit, and delete all data.
+
+**Fix:**
+- Enabled RLS on all 5 tables via SQL Editor
+- Added "Allow authenticated access" policy on each table (auth.role() = 'authenticated')
+- blog_posts already had RLS enabled
+- Anonymous/public access is now blocked; service role key bypasses RLS as expected
+
+**Problem 2: API keys exposed in frontend JavaScript**
+All API keys were prefixed with VITE_, which caused Vite to bundle them into the production JavaScript. Anyone could open browser dev tools and extract them.
+
+**Fix:**
+- Created Express backend proxy (server.js) with endpoints:
+  - /api/anthropic/messages
+  - /api/openai/chat/completions
+  - /api/gemini/generate
+  - /api/dataforseo/*
+- Updated src/lib/aeo.js, src/lib/anthropic.js, src/lib/dataforseo.js to call proxy endpoints instead of external APIs directly
+- Removed all API keys and credentials from frontend code
+- Renamed environment variables in .env and Railway (removed VITE_ prefix from secret keys)
+- Only VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY remain as VITE_ (safe to expose, designed for client-side use with RLS)
+
+**Problem 3: Old API keys compromised**
+Since the old keys were visible in the previous production build, they were considered compromised.
+
+**Fix:**
+- Rotated Anthropic, OpenAI, and Gemini API keys (new keys generated and set in Railway)
+- DataForSEO password cannot be rotated but is now server-side only
+
+**Railway variable names (current):**
+- ANTHROPIC_API_KEY (server-only)
+- OPENAI_API_KEY (server-only)
+- GEMINI_API_KEY (server-only)
+- DATAFORSEO_LOGIN (server-only)
+- DATAFORSEO_PASSWORD (server-only)
+- VITE_SUPABASE_URL (frontend, safe)
+- VITE_SUPABASE_ANON_KEY (frontend, safe)
+
+**Files changed:**
+- server.js (new — Express proxy server)
+- src/lib/aeo.js (removed API keys, uses /api/* proxy)
+- src/lib/anthropic.js (removed API keys, uses /api/* proxy)
+- src/lib/dataforseo.js (removed credentials, uses /api/* proxy)
+- .env (secret keys renamed without VITE_ prefix)
+- .env.example (updated to match)
+- package.json (added express, start command changed to node server.js)
+- railway.json (start command: npm run build && npm start)
+- PROJECT_HISTORY.md (updated RLS info, env var names, removed old "disable RLS" instructions)
+
+**Verified:** Production build contains zero secret keys in the JS bundle. Deploy successful on Railway.
