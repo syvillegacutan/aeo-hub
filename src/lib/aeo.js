@@ -1,13 +1,6 @@
 import axios from 'axios'
 import { supabase } from './supabase'
 
-const ANTHROPIC_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY
-const OPENAI_KEY    = import.meta.env.VITE_OPENAI_API_KEY
-const GEMINI_KEY    = import.meta.env.VITE_GEMINI_API_KEY
-
-const OPENAI_BASE  = import.meta.env.DEV ? '/openai' : 'https://api.openai.com'
-const GEMINI_BASE  = 'https://generativelanguage.googleapis.com'
-
 export function buildQuestions(client) {
   const niche    = client.niche    || 'service'
   const location = client.location || 'your area'
@@ -23,52 +16,29 @@ function mentionsClient(text, clientName) {
 }
 
 async function askClaude(question) {
-  const { data } = await axios.post(
-    'https://api.anthropic.com/v1/messages',
-    {
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 500,
-      messages: [{ role: 'user', content: question }],
-    },
-    {
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_KEY,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true',
-      },
-    }
-  )
+  const { data } = await axios.post('/api/anthropic/messages', {
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 500,
+    messages: [{ role: 'user', content: question }],
+  })
   return data.content[0].text
 }
 
 async function askChatGPT(question) {
-  const { data } = await axios.post(
-    `${OPENAI_BASE}/v1/chat/completions`,
-    {
-      model: 'gpt-4o-mini',
-      max_tokens: 500,
-      messages: [{ role: 'user', content: question }],
-    },
-    {
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${OPENAI_KEY}`,
-      },
-    }
-  )
+  const { data } = await axios.post('/api/openai/chat/completions', {
+    model: 'gpt-4o-mini',
+    max_tokens: 500,
+    messages: [{ role: 'user', content: question }],
+  })
   return data.choices[0].message.content
 }
 
 async function askGemini(question) {
-  const { data } = await axios.post(
-    `${GEMINI_BASE}/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`,
-    {
-      contents: [{ parts: [{ text: question }] }],
-      generationConfig: { maxOutputTokens: 500 },
-    },
-    { headers: { 'Content-Type': 'application/json' } }
-  )
+  const { data } = await axios.post('/api/gemini/generate', {
+    model: 'gemini-1.5-flash',
+    contents: [{ parts: [{ text: question }] }],
+    generationConfig: { maxOutputTokens: 500 },
+  })
   return data.candidates[0].content.parts[0].text
 }
 

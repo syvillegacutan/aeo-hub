@@ -1,16 +1,6 @@
 import axios from 'axios'
 
-const LOGIN = import.meta.env.VITE_DATAFORSEO_LOGIN
-const PASSWORD = import.meta.env.VITE_DATAFORSEO_PASSWORD
-
-// In dev the Vite proxy at /dataforseo → https://api.dataforseo.com avoids CORS.
-// vite.config.js already has: proxy: { '/dataforseo': { target: 'https://api.dataforseo.com', changeOrigin: true, rewrite: … } }
-const BASE = import.meta.env.DEV ? '/dataforseo/v3' : 'https://api.dataforseo.com/v3'
-
-const HEADERS = () => ({
-  Authorization: `Basic ${btoa(`${LOGIN}:${PASSWORD}`)}`,
-  'Content-Type': 'application/json',
-})
+const BASE = '/api/dataforseo'
 
 function cleanDomain(website) {
   return website.replace(/^https?:\/\//, '').replace(/\/$/, '').split('/')[0]
@@ -23,7 +13,6 @@ export async function getKeywordsForSite(website) {
   const { data } = await axios.post(
     `${BASE}/keywords_data/google/keywords_for_site/live`,
     [{ target: domain, language_name: 'English', location_name: 'United States', limit: 50 }],
-    { headers: HEADERS() }
   )
   const results = data?.tasks?.[0]?.result || []
   return results
@@ -54,7 +43,7 @@ async function serpRequest(keyword) {
 
   let resp
   try {
-    resp = await axios.post(url, body, { headers: HEADERS() })
+    resp = await axios.post(url, body)
   } catch (err) {
     const detail = err?.response?.data ?? err.message
     console.error(`[DFS] HTTP error for "${keyword}":`, JSON.stringify(detail))
